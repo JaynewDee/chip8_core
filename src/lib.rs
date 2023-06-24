@@ -106,6 +106,7 @@ impl Emulator {
         let digit3 = (op & 0x00F0) >> 4;
         let digit4 = op & 0x000F;
 
+        let digits = (digit1, digit2, digit3, digit4);
         // Operations by OpCode
         match (digit1, digit2, digit3, digit4) {
             // 0000 - Nop ::: no-op / do nothing
@@ -126,34 +127,34 @@ impl Emulator {
             }
             // 2NNN - Call Subroutine
             (2, _, _, _) => {
-                let sub_address = op & 0xFFF;
                 self.push(self.program_counter);
-                self.program_counter = sub_address;
+
+                self.program_counter = op & 0xFFF;
             }
             // 3XNN - Skip next if VX == NN ::: if/else, execute line based on condition
             (3, _, _, _) => {
-                let v_reg_idx = digit2 as usize;
+                let vx = digit2 as usize;
                 let value = (op & 0xFF) as u8;
 
-                if self.v_registers[v_reg_idx] == value {
+                if self.v_registers[vx] == value {
                     self.program_counter += 2;
                 }
             }
             // 4XNN - Skip next if VX != NN ::: same as prev but reversed condition
             (4, _, _, _) => {
-                let v_reg_idx = digit2 as usize;
+                let vx = digit2 as usize;
                 let value = (op & 0xFF) as u8;
 
-                if self.v_registers[v_reg_idx] != value {
+                if self.v_registers[vx] != value {
                     self.program_counter += 2;
                 }
             }
             // 5XY0 - Skip next if VX == VY ::: uses 2 v registers, one for each value
             (5, _, _, 0) => {
-                let v_reg1 = digit2 as usize;
-                let v_reg2 = digit3 as usize;
+                let vx = digit2 as usize;
+                let vy = digit3 as usize;
 
-                if self.v_registers[v_reg1] == self.v_registers[v_reg2] {
+                if self.v_registers[vx] == self.v_registers[vy] {
                     self.program_counter += 2;
                 }
             }
@@ -175,6 +176,7 @@ impl Emulator {
             (8, _, _, 0) => {
                 let v_reg_x = digit2 as usize;
                 let v_reg_y = digit3 as usize;
+
                 self.v_registers[v_reg_x] = self.v_registers[v_reg_y]
             }
             // 8XY1 - Bitwise OR operation
@@ -183,7 +185,7 @@ impl Emulator {
                 let v_reg_y = digit3 as usize;
 
                 self.v_registers[v_reg_x] |= self.v_registers[v_reg_y];
-            } 
+            }
             // 8XY2 - Bitwise AND operation
             (8, _, _, 2) => {
                 let v_reg_x = digit2 as usize;
@@ -202,10 +204,10 @@ impl Emulator {
             (8, _, _, 4) => {
                 let vx = digit2 as usize;
                 let vy = digit3 as usize;
-                
+
                 let (new_vx, carry) = self.v_registers[vx].overflowing_add(self.v_registers[vy]);
                 let new_vf = if carry { 1 } else { 0 };
-                
+
                 self.v_registers[vx] = new_vx;
                 self.v_registers[0xF] = new_vf;
             }
@@ -213,30 +215,33 @@ impl Emulator {
             (8, _, _, 5) => {
                 let vx = digit2 as usize;
                 let vy = digit3 as usize;
-                
+
                 let (new_vx, borrow) = self.v_registers[vx].overflowing_sub(self.v_registers[vy]);
-                let new_vf = if borrow { 0 } else { 1 }; 
+                let new_vf = if borrow { 0 } else { 1 };
 
                 self.v_registers[vx] = new_vx;
                 self.v_registers[0xF] = new_vf;
             }
             // 8XY6 - VX >>= 1 ::: Right shift value in VX register, store dropped bit in VF
-            (8, _, _, 6) => {
-                let vx = digit2 as usize;
-                let lsb = self.v_registers[vx] & 1;
-                self.v_registers[vx] >>= 1;
-                self.v_registers[0xF] = lsb;
-            }
+            (8, _, _, 6) => self.opcode_8xy6(digits)
             (_, _, _, _) => unimplemented!("Unimplemented opcode: {}", &op),
-            // 
-            
+            //
         }
-        
-        pub fn reset(&mut self) {
-            self.program_counter = START_ADDR;
-            self.ram = [0; RAM_SIZE];
-            self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
-            self.v_registers = [0; NUM_V_REGS];
+    }
+
+    fn opcode_8xy6(&mut self, digits: (u16, u16, u16, u16)) {
+        let (_, d2, _, _) = digits;
+        let vx = d2 as usize;
+        let lsb = self.v_registers[vx] & 1;
+        self.v_registers[vx] >>= 1;
+        self.v_registers[0xF] = lsb;
+    }
+
+    pub fn reset(&mut self) {
+        self.program_counter = START_ADDR;
+        self.ram = [0; RAM_SIZE];
+        self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+        self.v_registers = [0; NUM_V_REGS];
         self.i_register = 0;
         self.stack_pointer = 0;
         self.stack = [0; STACK_SIZE];
